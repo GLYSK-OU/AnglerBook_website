@@ -355,3 +355,23 @@ section { padding-block: clamp(56px, 9vw, 104px); }
   .theme-toggle span { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .theme-toggle { transition: none; } }
+
+/* ==================== Footer beta CTA ==================== */
+.foot-beta {
+  margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--ink-faint);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+}
+.foot-beta-label {
+  font-family: var(--display); text-transform: uppercase; letter-spacing: 0.06em;
+  font-size: 0.86rem; font-weight: 700; color: var(--ink); margin-right: 2px;
+}
+.beta-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 15px; border-radius: 999px;
+  border: 1px solid var(--ink-faint); color: var(--ink);
+  font-size: 0.86rem; font-weight: 500; text-decoration: none;
+  transition: border-color .2s ease, color .2s ease, background .2s ease;
+}
+.beta-btn svg { width: 15px; height: 15px; flex: none; }
+.beta-btn:not(.is-soon):hover { border-color: var(--green); color: var(--green); }
+.beta-btn.is-soon { color: var(--ink-soft); cursor: default; opacity: 0.7; }
