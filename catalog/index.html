@@ -64,59 +64,21 @@
 
 <script>
 (async () => {
+  // Canonical catalog, maintained in GLYSK-OU/AnglerBook-catalog and published
+  // via GitHub Pages (CORS: Access-Control-Allow-Origin: *). We fetch it live so
+  // the page is always current. ./gear.json is a same-origin fallback committed
+  // to this repo — used only if the canonical fetch fails, so the page can never
+  // go blank. (NB: catalog.anglerbook.fun is not provisioned yet; point SOURCE
+  // there once its DNS + custom domain are live.)
+  const SOURCE = 'https://glysk-ou.github.io/AnglerBook-catalog/catalog/gear.json';
+  const FALLBACK = './gear.json';
+  const CACHE_KEY = 'anglerbook.gear.catalog.v1';
+
   const out = document.getElementById('out');
   const meta = document.getElementById('meta');
-  let data;
-  try {
-    const res = await fetch('./gear.json', { cache: 'no-cache' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    data = await res.json();
-  } catch (e) {
-    out.innerHTML = '<p class="state">Could not load the catalog (' + e.message + ').</p>';
-    meta.textContent = '';
-    return;
-  }
-
-  const kinds = data.kinds || [];
-  const modelCount = kinds.reduce((n,k)=>n+(k.brands||[]).reduce((m,b)=>m+(b.models||[]).length,0),0);
-  meta.textContent = 'Version ' + (data.catalogVersion || '—') + ' · ' + kinds.length + ' categories · ' + modelCount + ' models';
-
-  out.innerHTML = '';
-  for (const k of kinds) {
-    const sec = document.createElement('section');
-    sec.className = 'kind';
-    const h2 = document.createElement('h2');
-    h2.textContent = k.label || k.kind;
-    sec.appendChild(h2);
-    if (Array.isArray(k.variantSpecFields) && k.variantSpecFields.length) {
-      const f = document.createElement('p');
-      f.className = 'fields';
-      f.textContent = 'Spec fields: ' + k.variantSpecFields.join(', ');
-      sec.appendChild(f);
-    }
-    for (const b of (k.brands || [])) {
-      const wrap = document.createElement('div');
-      wrap.className = 'brand';
-      const h3 = document.createElement('h3');
-      h3.textContent = b.brand;
-      wrap.appendChild(h3);
-      const ms = document.createElement('div');
-      ms.className = 'models';
-      for (const m of (b.models || [])) {
-        const sp = document.createElement('span');
-        const vc = Array.isArray(m.variants) ? m.variants.length : 0;
-        sp.innerHTML = '<b>' + m.model + '</b>' + (vc ? ' <i>· ' + vc + '</i>' : '');
-        sp.dataset.search = (b.brand + ' ' + m.model).toLowerCase();
-        ms.appendChild(sp);
-      }
-      wrap.appendChild(ms);
-      sec.appendChild(wrap);
-    }
-    out.appendChild(sec);
-  }
-
   const q = document.getElementById('q');
   const count = document.getElementById('count');
+
   const applyFilter = () => {
     const term = q.value.trim().toLowerCase();
     let shown = 0;
@@ -136,7 +98,94 @@
     });
     count.textContent = term ? shown + ' match' + (shown===1?'':'es') : '';
   };
+  // Wire the filter once — render() rebuilds #out in place and the handler
+  // re-queries the DOM each time, so one listener survives re-renders.
   q.addEventListener('input', applyFilter);
+
+  const render = (data) => {
+    const kinds = data.kinds || [];
+    const modelCount = kinds.reduce((n,k)=>n+(k.brands||[]).reduce((m,b)=>m+(b.models||[]).length,0),0);
+    meta.textContent = 'Version ' + (data.catalogVersion || '—') + ' · ' + kinds.length + ' categories · ' + modelCount + ' models';
+
+    out.innerHTML = '';
+    for (const k of kinds) {
+      const sec = document.createElement('section');
+      sec.className = 'kind';
+      const h2 = document.createElement('h2');
+      h2.textContent = k.label || k.kind;
+      sec.appendChild(h2);
+      if (Array.isArray(k.variantSpecFields) && k.variantSpecFields.length) {
+        const f = document.createElement('p');
+        f.className = 'fields';
+        f.textContent = 'Spec fields: ' + k.variantSpecFields.join(', ');
+        sec.appendChild(f);
+      }
+      for (const b of (k.brands || [])) {
+        const wrap = document.createElement('div');
+        wrap.className = 'brand';
+        const h3 = document.createElement('h3');
+        h3.textContent = b.brand;
+        wrap.appendChild(h3);
+        const ms = document.createElement('div');
+        ms.className = 'models';
+        for (const m of (b.models || [])) {
+          const sp = document.createElement('span');
+          const vc = Array.isArray(m.variants) ? m.variants.length : 0;
+          sp.innerHTML = '<b>' + m.model + '</b>' + (vc ? ' <i>· ' + vc + '</i>' : '');
+          sp.dataset.search = (b.brand + ' ' + m.model).toLowerCase();
+          ms.appendChild(sp);
+        }
+        wrap.appendChild(ms);
+        sec.appendChild(wrap);
+      }
+      out.appendChild(sec);
+    }
+    applyFilter();
+  };
+
+  const fetchJson = async (url) => {
+    const res = await fetch(url, { cache: 'default' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.json();
+  };
+
+  // 1. Paint instantly from the last cached canonical catalog, if any.
+  let shownVersion = null;
+  try {
+    const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+    if (cached && cached.data && Array.isArray(cached.data.kinds)) {
+      shownVersion = cached.data.catalogVersion || null;
+      render(cached.data);
+    }
+  } catch (e) { /* ignore corrupt/absent cache */ }
+
+  // 2. Fetch the canonical catalog; fall back to the bundled copy on failure.
+  let data, fromCanonical = false;
+  try {
+    data = await fetchJson(SOURCE);
+    fromCanonical = true;
+  } catch (e) {
+    // Canonical unreachable. If something is already on screen (cache), keep it
+    // rather than downgrade to the older bundled copy or blank the page.
+    if (shownVersion !== null) return;
+    try {
+      data = await fetchJson(FALLBACK);
+    } catch (e2) {
+      out.innerHTML = '<p class="state">Could not load the catalog (' + e.message + ').</p>';
+      meta.textContent = '';
+      return;
+    }
+  }
+
+  // 3. Re-render only when the catalog changed; cache canonical results so the
+  //    next visit paints instantly and revalidates against catalogVersion.
+  if (data.catalogVersion == null || data.catalogVersion !== shownVersion) {
+    render(data);
+    shownVersion = data.catalogVersion || null;
+  }
+  if (fromCanonical) {
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ data })); } catch (e) { /* quota/private mode */ }
+  }
 })();
 </script>
 </body>
